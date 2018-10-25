@@ -1,0 +1,219 @@
+---
+title: "Assignment2_Part1_VoiceInSchizophrenia"
+author: "Phila"
+date: "october, 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+setwd("~/Desktop/3.SEM - COG SCI/Experimental Methods 3/3) R Studio/ExpMeth3/shizophrenia")
+
+library(dplyr)
+```
+
+## Assignment Part 1 - Assessing voice in schizophrenia
+
+Schizophrenia has been associated with "inappropriate" voice, sometimes monotone, sometimes croaky. A few studies indicate that pitch might be an index of schizophrenia. However, an ongoing meta-analysis of the literature (which you will have a go at in the last assignment) indicates that pitch mean and standard deviation are only weak indicators of diagnosis. Can we do better with our new fancy complex skills?
+
+The corpus you are asked to analyse is a set of voice recordings from people with schizophrenia (just after first diagnosis) and 1-1 matched controls (on gender, age, education). Each participant watched 10 videos of triangles moving across the screen and had to describe them (so you have circa 10 recordings per person). We have already extracted the pitch once every 10 milliseconds and you will have to use this data to assess differences in the voice.
+
+Can you characterize voice in schizophrenia as acoustically different? Report the methods you used to answer this question and the results from the analyses. Add a couple of lines trying to interpret the results (make sense of the difference). E.g. People with schizophrenia tend to have high-pitched voice, and present bigger swings in their prosody than controls. Add a couple of lines describing limitations of the data/analyses if any is relevant.
+
+
+N.B. There are looots of files to be dealt with. Maybe too many for your computer, depending on how you load the files. This is a challenge for you. Some (complementary) possible strategies:
+- You can select a subset of files only (and you have to justify your choice).
+- You can learn how to use the apply() or map() functions.
+- You can coordinate with classmates.
+
+Hint: There is some information in the filenames that you might need.
+Hint: It might be a good idea to first create a function which loads and parses one file, and then loop through the list of files to read them all. For example
+
+1. In the course of this assignment you have to first select one datafile and figure out how to:
+
+- Extract "standard" descriptors of pitch: Mean, standard deviation, range
+- Extract less "standard" descriptors of pitch you can think of (e.g. median, iqr, mean absoluted deviation, coefficient of variation)
+
+2. Second you will have to turn the code into a function and loop through all the files (or even better use apply/sapply/lapply)
+- Remember to extract the relevant information from the file names (Participant, Diagnosis, Trial, Study)
+
+```{r}
+
+mydata <- read.table("/Users/philalou/Desktop/3.SEM - COG SCI/Experimental Methods 3/3) R Studio/ExpMeth3/shizophrenia/Pitch/Study1D0S101T1_f0.txt", header = T)
+
+is.factor(mydata$f0)
+
+#install.packages("cvequality")
+library(cvequality)
+
+read_pitch <- function(filename) {
+  
+  # read data
+  #data_s <- read.table(str_c("/Users/philalou/Desktop/3.SEM - COG SCI/Experimental Methods 3/3) R Studio/ExpMeth3/shizophrenia/Pitch/",filename),   header = TRUE)
+  
+  data_s <- setNames(data.frame(matrix(ncol=4, nrow=1)),c("study","diagnosis","subject","trial"))
+  file <- read.delim(filename)
+  
+    # parse filename
+  data_s$study <- stringr::str_extract(filename, "Study[0-9]")
+  data_s$diagnosis <- stringr::str_extract(filename, "D[0-9]")
+  data_s$subject <- stringr::str_extract(filename, "S[0-9][0-9][0-9]")
+  data_s$trial <- stringr::str_extract(filename, "T[0-9].")
+   
+    # extract descriptors
+  data_s$mean <- mean(file$f0)
+  data_s$median <- median(file$f0)
+  data_s$sd <- sd(file$f0)
+  data_s$min <- min(file$f0)
+  data_s$max <- max(file$f0)
+  data_s$iqr <- IQR(file$f0)
+  data_s$meanAD <- mad(file$f0, na.rm = F)
+  data_s$range <- 
+  #data_s$cv <- CV(mydata$f0)
+  
+    # combine all this data
+    return(data_s)
+}
+
+# test it on just one file while writing the function
+test_data = read_pitch("/Users/philalou/Desktop/3.SEM - COG SCI/Experimental Methods 3/3) R Studio/ExpMeth3/shizophrenia/Pitch/Study1D0S101T1_f0.txt")
+
+#install.packages("purrr")
+library(purrr)
+
+# when you've created a function that works, you can
+pitch_data = list.files("/Users/philalou/Desktop/3.SEM - COG SCI/Experimental Methods 3/3) R Studio/ExpMeth3/shizophrenia/Pitch/", pattern = "Study", full.names = T) %>% purrr::map_df(read_pitch)
+
+#install.packages("readr")
+library(readr)
+library(data.table)
+
+DT <- as.data.table(pitch_data)
+write.csv( DT, file= "Pitchdata.csv") 
+
+
+
+```
+
+
+
+3. Make one model per acoustic feature and test whether you can observe significant difference due to Diagnosis. Tip: Which other fixed factors should you control for (that is, include in the model)? Which random ones?
+- Bonus points: cross-validate the model and report the betas and standard errors from all rounds to get an idea of how robust the estimates are. 
+```{r}
+
+#model_new3 <- lmer(CHI_MLU~VISIT.x*Diagnosis+ADOS2+MOT_MLU+ I(VISIT.x^2) +I(VISIT.x^3) + (1+VISIT.x+I(VISIT.x^2)|ID)   ,df_all, REML=F) #
+library(lme4)
+library(Matrix)
+
+pitch_data$diagnosis <- str_replace_all(pitch_data$diagnosis, "[D]", "")
+
+pitch_data$diagnosis <- as.numeric(pitch_data$diagnosis)
+
+#adding columns
+
+
+mean <- (pitch_data$max - pitch_data$min)
+pitch_data$range <- mean
+
+names(pitch_data)[12] <- "range"
+
+cv <- (pitch_data$sd/pitch_data$mean*100)
+pitch_data$cv <- cv
+
+#MODELS
+
+model_mean <- lmer(mean ~ diagnosis + (1+diagnosis|subject) + (1|study)+ (1|trial), pitch_data, REML=F)
+summary(model_mean)
+
+model_range <- lmer( range ~ diagnosis + (1+diagnosis|subject) + (1|study) + (1|trial), pitch_data, REML = F)
+summary(model_range)
+
+model_median <- lmer(median ~ diagnosis + (1+diagnosis|subject) + (1|study) + (1|trial), pitch_data, REML = F)
+summary(model_median)
+
+
+model_sd  <- lmer(sd ~ diagnosis + (1+diagnosis|subject) + (1|study)+ (1|trial) , pitch_data, REML = F)
+summary(model_sd)
+
+
+model_iqr  <- lmer(iqr ~ diagnosis + (1+diagnosis|subject) + (1|study) + (1|trial), pitch_data, REML = F)
+summary(model_iqr)
+
+
+model_meanAD  <- lmer(meanAD ~ diagnosis + (1+diagnosis|subject) + (1|study)+ (1|trial) , pitch_data, REML = F)
+summary(model_meanAD)
+
+model_cv <- lmer(cv ~ diagnosis + (1+diagnosis|subject) + (1|study) + (1|trial), pitch_data, REML = F)
+summary(model_cv)
+
+
+
+
+# Study as a significant factor?
+
+model_mean_2 <- lmer(mean ~ diagnosis*study + (1+diagnosis|subject) +  (1|trial), pitch_data, REML=F)
+summary(model_mean_2)
+
+model_range_2 <- lmer( range ~ diagnosis*study + (1+diagnosis|subject)  + (1|trial), pitch_data, REML = F)
+summary(model_range_2)
+
+model_median_2 <- lmer(median ~ diagnosis*study + (1+diagnosis|subject)  + (1|trial), pitch_data, REML = F)
+summary(model_median_2)
+
+
+model_sd_2  <- lmer(sd ~ diagnosis*study + (1+diagnosis|subject) + (1|trial) , pitch_data, REML = F)
+summary(model_sd_2)
+
+
+model_iqr_2  <- lmer(iqr ~ diagnosis*study + (1+diagnosis|subject)  + (1|trial), pitch_data, REML = F)
+summary(model_iqr_2)
+
+
+model_meanAD_2  <- lmer(meanAD ~ diagnosis*study + (1+diagnosis|subject) + (1|trial) , pitch_data, REML = F)
+summary(model_meanAD_2)
+
+model_cv_2 <- lmer(cv ~ diagnosis*study + (1+diagnosis|subject)  + (1|trial), pitch_data, REML = F)
+summary(model_cv_2)
+
+
+
+
+```
+
+3a. Is study a significant predictor in these models? What should you infer from this? Does study interact with diagnosis? What should you infer from this?
+
+- study is a fixed effect which means it explains a lot of the variance of the acoustic features of the pitch data
+- it interacts with diagnosis which means that grouped by diagnosis there still is a big difference between the people from different studies
+- in general we can say that the studies are proabably carried out really differently (setting, participants, etc) and therefore cause a lot of variance in the pitch data
+- as we are interested in the pitch predicted by diagnosis only, and we want the results to be replicable across different studies, this is a problem
+
+```{r}
+#which model is better? is there an interaction between study and diagnosis
+
+anova(model_mean, model_mean_2, na.action=na.omit)  # second model *
+
+anova(model_range, model_range_2, na.action=na.omit) #second model
+
+anova(model_median, model_median_2, na.action=na.omit) #second model *
+
+anova(model_sd, model_sd_2, na.action=na.omit) #second model
+
+anova(model_iqr, model_iqr_2, na.action=na.omit) #second model *
+
+anova(model_meanAD, model_meanAD_2, na.action=na.omit) #second model **
+
+anova(model_cv, model_cv_2, na.action=na.omit) #second model **
+```
+
+
+4. Bonus Question: Compare effect size of diagnosis across the different measures. Which measure seems most sensitive?
+- Tip: to compare across measures you need to put all of them on the same scale, that is, you need to "standardize" them (z-score)
+
+5. Bonus question. In the Clinical Info file you have additional information about the participants. Which additional parameters (e.g. age, gender) should we control for? Report the effects.
+
+6. Write a paragraph reporting methods and results
+
+[Next assignment: can we use these measures to build a tool that diagnoses people from voice only?]
+
+## N.B. Remember to save the acoustic features of voice in a separate file, so to be able to load them next time
